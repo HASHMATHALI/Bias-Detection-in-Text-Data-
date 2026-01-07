@@ -50,3 +50,14 @@ This project investigates:
   - **Female → negative**
 
 #### 📊 Results
+<img width="542" height="86" alt="image" src="https://github.com/user-attachments/assets/40bb95e9-64c9-480c-a0e1-11cc2e0b84af" />
+<img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/be431b9b-9a94-45e6-bca6-0fc055262fcd" />
+<img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/6a0c2db0-d0fe-44b9-ac70-dfba16178b75" />
+<img width="1600" height="800" alt="image" src="https://github.com/user-attachments/assets/3277ac9c-aa21-4e0c-aec9-afd1e3a33daf" />
+<img width="1600" height="800" alt="image" src="https://github.com/user-attachments/assets/9b00515c-5e53-47d8-bad9-69b4a18d5a26" />
+<img width="1600" height="800" alt="image" src="https://github.com/user-attachments/assets/6404d6fc-9cdd-4e28-9c08-3c611dbe2862" />
+
+
+
+
+
