@@ -48,6 +48,23 @@ This project investigates:
 - Direction oriented so:
   - **Male → positive**
   - **Female → negative**
+ 
+## 📥 Datasets Used
+
+Due to GitHub size limits, the full datasets are not included in this repository.
+
+### Job Descriptions Dataset
+- Source: Kaggle
+- Link: https://www.kaggle.com/datasets/andrewmvd/job-description-dataset
+- File used: job_title_des.csv
+
+### Glassdoor Employee Reviews Dataset
+- Source: Kaggle
+- Link: https://www.kaggle.com/datasets/davidgauthier/glassdoor-job-reviews
+- Relevant columns: pros, cons, advice_to_mgmt
+
+Users should download these datasets manually and place them in the project root directory before running the code.
+
 
 #### 📊 Results
 <img width="542" height="86" alt="image" src="https://github.com/user-attachments/assets/40bb95e9-64c9-480c-a0e1-11cc2e0b84af" />
