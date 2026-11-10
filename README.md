@@ -74,7 +74,11 @@ Users should download these datasets manually and place them in the project root
 <img width="1600" height="800" alt="image" src="https://github.com/user-attachments/assets/9b00515c-5e53-47d8-bad9-69b4a18d5a26" />
 <img width="1600" height="800" alt="image" src="https://github.com/user-attachments/assets/6404d6fc-9cdd-4e28-9c08-3c611dbe2862" />
 
+## Running
 
+```bash
+pip install numpy pandas matplotlib nltk scikit-learn gensim
+python bias_detection.py
+```
 
-
-
+Results (plots and scores) are written to the `outputs/` folder.
