@@ -66,6 +66,33 @@ Due to GitHub size limits, the full datasets are not included in this repository
 Users should download these datasets manually and place them in the project root directory before running the code.
 
 
+## ✅ How the gender direction is checked
+
+Two accuracies are written to `outputs/metrics.json`:
+
+- `validation_accuracy` scores the same male/female words that were used to
+  build the direction. It is circular and will look high on almost any embedding.
+- `held_out_accuracy` is the honest one: for each male/female pair the direction
+  is rebuilt without that pair, and only the two left-out words are scored
+  (leave-one-pair-out). On random vectors with no gender axis this falls to
+  about 50% while the circular score stays near 80%.
+
+`metrics.json` also lists `missing_words`: any target, attribute or job word
+that does not occur in the corpus and was therefore skipped.
+
+## ⚠️ Limits
+
+- The gender lexicon is 13 word pairs and the WEAT attribute sets have 8 to 9
+  words, so effect sizes are indicative, not precise.
+- Word2Vec is trained with `workers=4`, so two runs give slightly different vectors.
+- Gender is treated as a male/female axis because that is what the lexicon
+  encodes; this is a limitation of the method, not a claim about gender.
+- The result images below come from a run made **before** a preprocessing bug
+  was fixed: the lemmatizer was rewriting `children`, `parents`, `relatives`
+  and `sales`, so those words were silently missing from the analysis. The
+  pipeline has not been re-run on the full datasets since, so re-run it before
+  quoting numbers.
+
 #### 📊 Results
 <img width="542" height="86" alt="image" src="https://github.com/user-attachments/assets/40bb95e9-64c9-480c-a0e1-11cc2e0b84af" />
 <img width="1440" height="900" alt="image" src="https://github.com/user-attachments/assets/be431b9b-9a94-45e6-bca6-0fc055262fcd" />
@@ -77,8 +104,21 @@ Users should download these datasets manually and place them in the project root
 ## Running
 
 ```bash
-pip install numpy pandas matplotlib nltk scikit-learn gensim
+pip install -r requirements.txt
 python bias_detection.py
 ```
 
 Results (plots and scores) are written to the `outputs/` folder.
+
+## Tests
+
+```bash
+pip install pytest
+pytest
+```
+
+Nine checks on a hand-built embedding with a known gender axis: WEAT finds a
+planted bias, stays quiet without one and flips sign with it; the direction is
+male-positive; the held-out check drops to chance on random vectors; and the
+text cleaner keeps the exact words the analysis looks up. They need no corpus
+and no gensim.

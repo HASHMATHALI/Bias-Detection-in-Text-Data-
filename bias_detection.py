@@ -22,14 +22,12 @@ from nltk.stem import WordNetLemmatizer
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 
-from gensim.models import Word2Vec
 
 
 # Config
 
 DOC_LIMIT = None           # <<< use full data for best accuracy (set to 20000 for quick tests)
 OUT_DIR = Path("outputs")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Stronger Word2Vec hyperparameters
 W2V_PARAMS = dict(
@@ -74,13 +72,21 @@ JOB_WORDS = [
 
 # Phase 1 — Preprocessing
 
-def phase1_preprocessing():
-    print("\n Phase 1: Data Collection & Preprocessing ")
-    nltk.download("punkt", quiet=True)
-    nltk.download("stopwords", quiet=True)
+def protected_words():
+    """Words the analysis looks up by exact spelling, so preprocessing must not alter them."""
+    words = set(JOB_WORDS)
+    for group in BIAS_SETS.values():
+        words.update(group)
+    return words
+
+
+def build_cleaner():
+    """Return clean_text(doc) -> tokens. Downloads the NLTK data it needs on first use."""
+    for resource in ("punkt", "punkt_tab", "stopwords", "wordnet"):
+        nltk.download(resource, quiet=True)
 
     base_sw = set(stopwords.words("english"))
-    keep = set(BIAS_SETS["male"] + BIAS_SETS["female"] + BIAS_SETS["career"] + BIAS_SETS["family"])
+    keep = protected_words()
     lem = WordNetLemmatizer()
 
     def clean_text(doc: str):
@@ -89,8 +95,19 @@ def phase1_preprocessing():
         tok = [t for t in tok if t.isalpha()]
         # remove stopwords EXCEPT the words we want to keep for bias axis
         tok = [t for t in tok if (t not in base_sw) or (t in keep)]
-        tok = [lem.lemmatize(t) for t in tok]
+        # Never lemmatize a protected word: the lemmatizer turns "children" into
+        # "child", "parents" into "parent" and "sales" into "sale", which silently
+        # removed those words from the WEAT sets and the job list.
+        tok = [t if t in keep else lem.lemmatize(t) for t in tok]
         return [w for w in tok if len(w) > 1]
+
+    return clean_text
+
+
+def phase1_preprocessing():
+    print("\n Phase 1: Data Collection & Preprocessing ")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    clean_text = build_cleaner()
 
     # Load CSVs
     jobs = pd.read_csv("job_title_des.csv")
@@ -132,6 +149,8 @@ def phase1_preprocessing():
 
 def phase2_embeddings(sentences):
     print("\n Phase 2: Word Embedding Model (Stronger) ")
+    from gensim.models import Word2Vec  # imported here so the bias maths can be tested without gensim
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     model = Word2Vec(sentences=sentences, **W2V_PARAMS)
     model.save(str(OUT_DIR / "word2vec.model"))
     model.wv.save(str(OUT_DIR / "word2vec.kv"))
@@ -218,6 +237,40 @@ def build_supervised_direction(kv, male, female, C=1.0):
     acc = float(clf.score(X, y))
     return w, acc
 
+def combined_direction(kv, male, female, C=3.0):
+    """Average of the anchored and the supervised direction, oriented male-positive."""
+    parts = [g for g in (build_unsupervised_direction(kv, male, female),
+                         build_supervised_direction(kv, male, female, C=C)[0]) if g is not None]
+    if not parts:
+        return None
+    return orient_direction(kv, np.mean(np.stack(parts, 0), 0))
+
+
+def held_out_lexicon_accuracy(kv, male, female):
+    """Leave-one-pair-out check of the gender direction.
+
+    For each (male, female) word pair the direction is rebuilt WITHOUT that pair
+    (and without anchor pairs that contain either word), then the two held-out
+    words are scored. Scoring words that were used to build the direction, as
+    "validation_accuracy" does, is circular and close to 100% by construction.
+    """
+    global ANCHOR_PAIRS
+    pairs = [(m, f) for m, f in zip(male, female) if m in kv and f in kv]
+    correct = total = 0
+    saved = ANCHOR_PAIRS
+    try:
+        for m, f in pairs:
+            ANCHOR_PAIRS = [(a, b) for a, b in saved if not {a, b} & {m, f}]
+            g = combined_direction(kv, [w for w in male if w != m], [w for w in female if w != f])
+            if g is None:
+                continue
+            correct += int(float(np.dot(kv[m], g)) > 0) + int(float(np.dot(kv[f], g)) < 0)
+            total += 2
+    finally:
+        ANCHOR_PAIRS = saved
+    return (correct / total if total else float("nan")), total
+
+
 def orient_direction(kv, g):
     """Flip so that he>0 and she<0 when available."""
     if g is None: return None
@@ -240,17 +293,18 @@ def phase3_bias(model):
     p = weat_p_permutation(kv, male, female, career, family, n=1000)
     print(f"[WEAT] Cohen's d = {d:.3f}, permutation p = {p:.4f}")
 
-    #  Build multiple directions 
-    g_unsup = build_unsupervised_direction(kv, male, female)
-    g_sup, sup_train_acc = build_supervised_direction(kv, male, female, C=3.0)
+    #  Report target/attribute words that are missing from the vocabulary
+    missing = {name: [w for w in words if w not in kv] for name, words in BIAS_SETS.items()}
+    missing["jobs"] = [w for w in JOB_WORDS if w not in kv]
+    for name, words in missing.items():
+        if words:
+            print(f"[Vocabulary] {name}: not in the corpus, skipped: {', '.join(words)}")
 
-    parts = []
-    if g_unsup is not None: parts.append(g_unsup)
-    if g_sup   is not None: parts.append(g_sup)
-    if not parts:
+    #  Build multiple directions 
+    _, sup_train_acc = build_supervised_direction(kv, male, female, C=3.0)
+    g = combined_direction(kv, male, female, C=3.0)
+    if g is None:
         raise ValueError("Could not build any gender direction.")
-    g = np.mean(np.stack(parts, 0), 0)
-    g = orient_direction(kv, g)
 
     #  Validation on lexicon (unseen from training? here small set is OK) 
     def project(w): return float(np.dot(kv[w], g)) if w in kv else np.nan
@@ -265,14 +319,18 @@ def phase3_bias(model):
             s = project(w); total += 1; ok = (s < 0); correct += ok
             per_word.append({"word": w, "score": s, "expected": "female(-)", "correct": bool(ok)})
     acc = correct / total if total else float("nan")
-    print(f"[Validation] Pronoun/lexicon accuracy: {acc:.2%} ({correct}/{total})")
+    print(f"[Validation] In-sample lexicon accuracy: {acc:.2%} ({correct}/{total})  (circular: these words built the direction)")
+    held_out_acc, held_out_n = held_out_lexicon_accuracy(kv, male, female)
+    print(f"[Validation] Held-out lexicon accuracy (leave-one-pair-out): {held_out_acc:.2%} over {held_out_n} words")
           
     #  Project job words 
     rows = []
     for w in JOB_WORDS:
         if w in kv:
-            rows.append({"word": w, "projection": project(w)})
-    proj_df = pd.DataFrame(rows).sort_values("projection", ascending=False)
+            # "cosine" is length-normalised, so it is not inflated for frequent words
+            rows.append({"word": w, "projection": project(w), "cosine": cosine(kv[w], g)})
+    proj_df = pd.DataFrame(rows, columns=["word", "projection", "cosine"]).sort_values("projection", ascending=False)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     proj_df.to_csv(OUT_DIR / "gender_projection_jobs.csv", index=False)
 
     # Save metrics
@@ -280,6 +338,9 @@ def phase3_bias(model):
         "weat_effect_size": float(d),
         "weat_p_value": float(p),
         "validation_accuracy": float(acc),
+        "held_out_accuracy": float(held_out_acc),
+        "held_out_words": int(held_out_n),
+        "missing_words": missing,
         "supervised_train_accuracy": float(sup_train_acc) if not np.isnan(sup_train_acc) else None
     }
     (OUT_DIR / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
